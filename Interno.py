@@ -23,7 +23,7 @@ STEP_COLOR      = (0.55, 0.27, 0.07)
 LADDER_COLOR    = (0.4, 0.2, 0.1)
 
 # Parâmetros do quarto esférico
-SPHERE_RADIUS    = 10.0
+SPHERE_RADIUS    = 5.0 # TIBET 
 FLOOR_Y          = -3.0
 MID_FLOOR_Y      = FLOOR_Y + 4.2
 TOP_PASSAGE_Y    = SPHERE_RADIUS - 0.1
@@ -36,7 +36,7 @@ HOBBIT_WINDOW_RADIUS = 2.0
 # Disco ball removida do centro; será substituída por semicírculos de esferas
 
 # Parâmetros da escada em espiral (inferior->intermediário)
-NUM_STEPS       = 16
+NUM_STEPS       = 8
 TOTAL_HEIGHT    = MID_FLOOR_Y - FLOOR_Y
 STEP_HEIGHT     = TOTAL_HEIGHT / NUM_STEPS
 STEP_WIDTH      = 3.0
@@ -45,7 +45,7 @@ STEP_RADIAL     = SPHERE_RADIUS - 0.01
 STEP_ANGLE_INC  = 360.0 / NUM_STEPS
 
 # Parâmetros da escada em espiral (intermediário->teto)
-NUM_STEPS_UP        = 12
+NUM_STEPS_UP        = 2
 UP_HEIGHT           = TOP_PASSAGE_Y - MID_FLOOR_Y
 UP_STEP_HEIGHT      = UP_HEIGHT / NUM_STEPS_UP
 UP_STEP_RADIAL      = SPHERE_RADIUS - 0.01
