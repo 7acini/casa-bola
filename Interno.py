@@ -19,15 +19,15 @@ MIDDLE_COLOR = (0.0, 0.4, 0.0)  # Verde escuro
 TOP_COLOR    = (0.0, 0.0, 0.4)  # Azul escuro
 
 # Cores (normalizadas 0–1 para OpenGL)
-ROYAL_BLUE      = (65 / 255.0, 105 / 255.0, 225 / 255.0)
-LIGHTER_BLUE    = (100 / 255.0, 149 / 255.0, 237 / 255.0)
+ROYAL_BLUE      = (65/255.0, 105/255.0, 225/255.0)
+LIGHTER_BLUE    = (100/255.0, 149/255.0, 237/255.0)
 FRAME_GRAY      = (0.8, 0.8, 0.8)
 BLACK           = (0.0, 0.0, 0.0)
 STEP_COLOR      = (0.55, 0.27, 0.07)
 LADDER_COLOR    = (0.4, 0.2, 0.1)
 
 # Parâmetros do quarto esférico
-SPHERE_RADIUS    = 5.0 # TIBET
+SPHERE_RADIUS    = 5.0
 FLOOR_Y          = -3.0
 MID_FLOOR_Y      = FLOOR_Y + 4.2
 TOP_PASSAGE_Y    = SPHERE_RADIUS - 0.1
@@ -37,18 +37,111 @@ WINDOW_ANGLES    = [60, 180, 300]
 WINDOW_ELEVATION = 0
 HOBBIT_WINDOW_RADIUS = 2.0
 
-# Disco ball removida do centro; será substituída por semicírculos de esferas
+# ————————————————————————————————
+# PARÂMETROS DA RAMPA CURVADA (inferior→intermediário)
+# ————————————————————————————————
 
-# Parâmetros da escada em espiral (inferior->intermediário)
-NUM_STEPS       = 8
-TOTAL_HEIGHT    = MID_FLOOR_Y - FLOOR_Y
-STEP_HEIGHT     = TOTAL_HEIGHT / NUM_STEPS
-STEP_WIDTH      = 3.0
-STEP_DEPTH      = 1.0
-STEP_RADIAL     = SPHERE_RADIUS - 0.01
-STEP_ANGLE_INC  = 360.0 / NUM_STEPS
+RAMP_ANGLE_START = 0          # ângulo inicial (em graus) ao longo da circunferência interna
+RAMP_ANGLE_END   = 360        # ângulo final: uma volta completa
+RAMP_SEGMENTS    = 64         # quantos “pedaços” usar para suavizar a rampa
+RAMP_DEPTH       = 1.0        # “espessura” da rampa, radialmente para dentro da parede
 
-# Parâmetros da escada em espiral (intermediário->teto)
+RAMP_RADIAL_OUTER = SPHERE_RADIUS - 0.01              # raio externo (colado quase na parede)
+RAMP_RADIAL_INNER = RAMP_RADIAL_OUTER - RAMP_DEPTH    # raio interno
+
+# Altura total que a rampa precisa subir
+RAMP_HEIGHT = MID_FLOOR_Y - FLOOR_Y
+
+
+# --------------------------------------
+# RAMPAS: DESENHO E COLISÃO
+# --------------------------------------
+
+def draw_ramp():
+    """
+    Desenha uma rampa curvada que segue a parede esférica,
+    ligando FLOOR_Y até MID_FLOOR_Y em uma volta completa.
+    """
+    glColor3fv(STEP_COLOR)
+    altura_total = MID_FLOOR_Y - FLOOR_Y
+    ang_span = RAMP_ANGLE_END - RAMP_ANGLE_START
+    
+    for i in range(RAMP_SEGMENTS):
+        # ângulos (em graus) dos dois vértices desse “pedaço” de rampa
+        a1 = RAMP_ANGLE_START + (i    / RAMP_SEGMENTS) * ang_span
+        a2 = RAMP_ANGLE_START + ((i+1)/ RAMP_SEGMENTS) * ang_span
+        t1 = a1 * math.pi / 180.0
+        t2 = a2 * math.pi / 180.0
+
+        # altura correspondente a cada fragmento (varia linearmente)
+        h1 = FLOOR_Y + (i    / RAMP_SEGMENTS) * altura_total
+        h2 = FLOOR_Y + ((i+1)/ RAMP_SEGMENTS) * altura_total
+
+        # calcular as coordenadas externas (coladas na parede)
+        x1_ext = RAMP_RADIAL_OUTER * math.sin(t1)
+        z1_ext = RAMP_RADIAL_OUTER * math.cos(t1)
+        x2_ext = RAMP_RADIAL_OUTER * math.sin(t2)
+        z2_ext = RAMP_RADIAL_OUTER * math.cos(t2)
+
+        # coordenadas internas (radialmente para dentro, afastado da parede)
+        x1_int = RAMP_RADIAL_INNER * math.sin(t1)
+        z1_int = RAMP_RADIAL_INNER * math.cos(t1)
+        x2_int = RAMP_RADIAL_INNER * math.sin(t2)
+        z2_int = RAMP_RADIAL_INNER * math.cos(t2)
+
+        glBegin(GL_QUADS)
+        # superfície inclinada (face superior da rampa)
+        glVertex3f(x1_ext, h1, z1_ext)
+        glVertex3f(x2_ext, h2, z2_ext)
+        glVertex3f(x2_int, h2, z2_int)
+        glVertex3f(x1_int, h1, z1_int)
+        glEnd()
+
+
+def handle_ramp_collision():
+    """
+    Ajusta a altura da câmera ao caminhar pela rampa curva.
+    Retorna True se a câmera estiver dentro do arco da rampa e ajustar Y; senão False.
+    """
+    global on_ground
+    cam_x, cam_y, cam_z = camera_pos
+
+    # descobre o ângulo (em graus) da posição da câmera no plano XZ
+    ang_cam = (math.degrees(math.atan2(cam_x, cam_z)) + 360) % 360
+
+    # define faixa de ângulos válida para a rampa
+    start = RAMP_ANGLE_START % 360
+    end   = RAMP_ANGLE_END   % 360
+    # se RAMP_ANGLE_END > 360, podemos mapear a lógica modular
+    span = RAMP_ANGLE_END - RAMP_ANGLE_START
+
+    # calcular “quanto” (fração) da rampa já foi percorrido a partir de RAMP_ANGLE_START
+    frac = (ang_cam - RAMP_ANGLE_START) / span
+
+    # normalizar frac entre 0 e 1
+    if frac < 0:
+        frac += math.ceil(abs(frac))
+    if not (0 <= frac <= 1):
+        return False
+
+    # distância radial da câmera ao centro
+    dist_radial = math.sqrt(cam_x*cam_x + cam_z*cam_z)
+
+    # calcule também um limite permissivo de largura (entre RAMP_RADIAL_INNER−ε a RAMP_RADIAL_OUTER+ε)
+    if (RAMP_RADIAL_INNER - 0.3) <= dist_radial <= (RAMP_RADIAL_OUTER + 0.3):
+        # altura alvo
+        target_y = FLOOR_Y + frac * RAMP_HEIGHT + 0.2
+        if cam_y <= target_y + 0.1:
+            camera_pos[1] = target_y
+            on_ground = True
+            return True
+
+    return False
+
+# --------------------------------------
+# PARÂMETROS DA ESCADA SUPERIOR (intermediário→teto)
+# --------------------------------------
+
 NUM_STEPS_UP        = 2
 UP_HEIGHT           = TOP_PASSAGE_Y - MID_FLOOR_Y
 UP_STEP_HEIGHT      = UP_HEIGHT / NUM_STEPS_UP
@@ -57,19 +150,28 @@ UP_STEP_ANGLE_INC   = 360.0 / NUM_STEPS_UP
 UP_STEP_WIDTH       = 3.0
 UP_STEP_DEPTH       = 1.0
 
-# Parâmetros do alçapão no piso inferior
+# Pré-cálculo dos “degraus” apenas para a escada superior
+stairs_info_upper = []
+for i in range(NUM_STEPS_UP):
+    angle = i * UP_STEP_ANGLE_INC
+    height = MID_FLOOR_Y + UP_STEP_HEIGHT * (i + 1)
+    stairs_info_upper.append((angle, height))
+
+# --------------------------------------
+# PARÂMETROS DO ALÇAPÃO E HATCH
+# --------------------------------------
+
 HATCH_RADIUS        = 1.0
-LADDER_RUNG_SPACING = 0.3
-LADDER_RUNG_COUNT   = int(3.0 / LADDER_RUNG_SPACING)
+UPPER_HATCH_RADIUS  = 2.0
 
-# Parâmetro do corte circular no piso intermediário
-UPPER_HATCH_RADIUS = 2.0
+# --------------------------------------
+# PARÂMETROS DE MOVIMENTO
+# --------------------------------------
 
-# Parâmetro de salto
 GRAVITY       = 9.8
 JUMP_SPEED    = 5.0
 camera_vel_y  = 0.0
-on_ground     = False  # indica se posso pular
+on_ground     = False  # indica se pode pular
 
 # Câmera
 camera_pos         = [0.0, FLOOR_Y + 0.2, -2.0]
@@ -77,7 +179,10 @@ camera_rot         = [0.0, 0.0]
 mouse_sensitivity  = 0.2
 move_speed         = 0.1
 
-# Configuração OpenGL
+# --------------------------------------
+# CONFIGURAÇÃO OPENGL
+# --------------------------------------
+
 glEnable(GL_DEPTH_TEST)
 glEnable(GL_LIGHTING)
 glEnable(GL_LIGHT0)
@@ -94,7 +199,6 @@ glMatrixMode(GL_MODELVIEW)
 
 pygame.event.set_grab(True)
 pygame.mouse.set_visible(False)
-
 
 # --------------------------------------
 # FUNÇÕES DE DESENHO
@@ -118,7 +222,6 @@ def draw_colored_inner_sphere(radius):
         y0 = radius * math.sin(lat0)
         y1 = radius * math.sin(lat1)
 
-        # Determinar cor por faixa de altura
         if y0 < FLOOR_Y:
             glColor3fv(BOTTOM_COLOR)
         elif y0 < MID_FLOOR_Y:
@@ -158,67 +261,8 @@ def draw_floor(y_level, color, hole_radius=0.0):
     gluDeleteQuadric(quad)
 
 
-# Pré-cálculo degraus para colisão e desenho
-stairs_info_lower = []
-for i in range(NUM_STEPS):
-    angle = i * STEP_ANGLE_INC
-    height = FLOOR_Y + STEP_HEIGHT * (i + 1)
-    stairs_info_lower.append((angle, height))
-
-stairs_info_upper = []
-for i in range(NUM_STEPS_UP):
-    angle = i * UP_STEP_ANGLE_INC
-    height = MID_FLOOR_Y + UP_STEP_HEIGHT * (i + 1)
-    stairs_info_upper.append((angle, height))
-
-
-def draw_spiral_stairs_lower():
-    """Escada inferior: piso->segundo andar."""
-    glColor3fv(STEP_COLOR)
-    for angle, height in stairs_info_lower:
-        theta = math.radians(angle)
-        x_wall = STEP_RADIAL * math.sin(theta)
-        z_wall = STEP_RADIAL * math.cos(theta)
-        x_in = (STEP_RADIAL - STEP_DEPTH) * math.sin(theta)
-        z_in = (STEP_RADIAL - STEP_DEPTH) * math.cos(theta)
-        dx = STEP_WIDTH / 2 * math.cos(theta)
-        dz = -STEP_WIDTH / 2 * math.sin(theta)
-        glBegin(GL_QUADS)
-        # Face superior
-        glVertex3f(x_wall + dx,      height + 0.005, z_wall + dz)
-        glVertex3f(x_wall - dx,      height + 0.005, z_wall - dz)
-        glVertex3f(x_in  - dx,       height + 0.005, z_in  - dz)
-        glVertex3f(x_in  + dx,       height + 0.005, z_in  + dz)
-        # Face inferior
-        glVertex3f(x_wall + dx,      height, z_wall + dz)
-        glVertex3f(x_wall - dx,      height, z_wall - dz)
-        glVertex3f(x_in  - dx,       height, z_in  - dz)
-        glVertex3f(x_in  + dx,       height, z_in  + dz)
-        # Face externa
-        glVertex3f(x_wall + dx,      height,      z_wall + dz)
-        glVertex3f(x_wall - dx,      height,      z_wall - dz)
-        glVertex3f(x_wall - dx,      height + 0.005, z_wall - dz)
-        glVertex3f(x_wall + dx,      height + 0.005, z_wall + dz)
-        # Face interna
-        glVertex3f(x_in + dx,        height,      z_in + dz)
-        glVertex3f(x_in - dx,        height,      z_in - dz)
-        glVertex3f(x_in - dx,        height + 0.005, z_in - dz)
-        glVertex3f(x_in + dx,        height + 0.005, z_in + dz)
-        # Face lateral esquerda
-        glVertex3f(x_wall - dx,      height,      z_wall - dz)
-        glVertex3f(x_wall - dx,      height + 0.005, z_wall - dz)
-        glVertex3f(x_in   - dx,      height + 0.005, z_in   - dz)
-        glVertex3f(x_in   - dx,      height,      z_in   - dz)
-        # Face lateral direita
-        glVertex3f(x_wall + dx,      height,      z_wall + dz)
-        glVertex3f(x_wall + dx,      height + 0.005, z_wall + dz)
-        glVertex3f(x_in   + dx,      height + 0.005, z_in   + dz)
-        glVertex3f(x_in   + dx,      height,      z_in   + dz)
-        glEnd()
-
-
 def draw_spiral_stairs_upper():
-    """Escada superior: segundo andar->teto."""
+    """Escada superior: intermediário→teto."""
     glColor3fv(STEP_COLOR)
     for angle, height in stairs_info_upper:
         theta = math.radians(angle)
@@ -249,39 +293,22 @@ def draw_spiral_stairs_upper():
         glVertex3f(x_in - dx,        height,      z_in - dz)
         glVertex3f(x_in - dx,        height + 0.005, z_in - dz)
         glVertex3f(x_in + dx,        height + 0.005, z_in + dz)
-        # Face lateral esquerda
-        glVertex3f(x_wall - dx,      height,      z_wall - dz)
-        glVertex3f(x_wall - dx,      height + 0.005, z_wall - dz)
-        glVertex3f(x_in   - dx,      height + 0.005, z_in   - dz)
-        glVertex3f(x_in   - dx,      height,      z_in   - dz)
-        # Face lateral direita
-        glVertex3f(x_wall + dx,      height,      z_wall + dz)
-        glVertex3f(x_wall + dx,      height + 0.005, z_wall + dz)
-        glVertex3f(x_in   + dx,      height + 0.005, z_in   + dz)
-        glVertex3f(x_in   + dx,      height,      z_in   + dz)
         glEnd()
 
 
 def draw_hobbit_door(radius=HOBBIT_WINDOW_RADIUS, y_offset=0.0, angle_deg=0):
     """
-    Desenha um círculo (porta estilo Hobbit) na parede da esfera.
-    - radius: raio do círculo.
-    - y_offset: altura da porta.
-    - angle_deg: ângulo na esfera onde será desenhada.
+    Desenha uma porta redonda estilo Hobbit na parede da esfera.
     """
     glPushMatrix()
     theta = math.radians(angle_deg)
-    
-    # Posiciona na superfície da esfera
     x = SPHERE_RADIUS * math.sin(theta)
     z = SPHERE_RADIUS * math.cos(theta)
     y = y_offset
-    
     glTranslatef(x, y, z)
-    glRotatef(-angle_deg, 0, 1, 0)  # Gira o disco para "olhar para o centro"
-    glRotatef(90, 1, 0, 0)  # Põe o disco na vertical
+    glRotatef(-angle_deg, 0, 1, 0)
+    glRotatef(90, 1, 0, 0)
     glColor3fv(FRAME_GRAY)
-    
     quad = gluNewQuadric()
     gluDisk(quad, 0.0, radius, 64, 1)
     gluDeleteQuadric(quad)
@@ -291,19 +318,16 @@ def draw_hobbit_door(radius=HOBBIT_WINDOW_RADIUS, y_offset=0.0, angle_deg=0):
 def draw_skylight(y_level, outer_radius, inner_radius, color):
     """
     Desenha uma claraboia circular aberta no teto da casa esférica.
-    y_level: altura vertical da claraboia (ex: perto do topo da esfera)
-    outer_radius: raio externo do anel
-    inner_radius: raio interno do anel (buraco da claraboia)
-    color: cor do anel
     """
     quad = gluNewQuadric()
     glPushMatrix()
-    glTranslatef(0.0, y_level, 0.0)  # posiciona no teto
-    glRotatef(-90, 1, 0, 0)          # gira para ficar horizontal (XY plane)
+    glTranslatef(0.0, y_level, 0.0)
+    glRotatef(-90, 1, 0, 0)
     glColor3fv(color)
     gluDisk(quad, inner_radius, outer_radius, 64, 1)
     glPopMatrix()
     gluDeleteQuadric(quad)
+
 
 # --------------------------------------
 # CÂMERA (“FLY CAM”) E COLISÃO
@@ -317,7 +341,7 @@ def apply_camera():
 
 def handle_stair_collision():
     """
-    Ajusta altura da câmera ao subir pelos degraus em espiral.
+    Ajusta altura da câmera: prioriza rampa, depois degraus superiores.
     """
     global on_ground
     cam_x, cam_y, cam_z = camera_pos
@@ -326,17 +350,11 @@ def handle_stair_collision():
 
     on_ground = False
 
-    # Verifica contato com degraus inferiores
-    for step_angle, step_height in stairs_info_lower:
-        diff = abs((angle - step_angle + 180) % 360 - 180)
-        if diff < (STEP_ANGLE_INC / 2) and abs(dist_radial - (STEP_RADIAL - STEP_DEPTH / 2)) < 0.5:
-            target_y = step_height + 0.2
-            if cam_y <= target_y + 0.1:
-                camera_pos[1] = target_y
-                on_ground = True
-            return
+    # 1) Tenta colisão com a rampa inferior→intermediário
+    if handle_ramp_collision():
+        return
 
-    # Verifica contato com degraus superiores
+    # 2) Se não estiver na rampa, checa escada superior (intermediário→teto)
     for step_angle, step_height in stairs_info_upper:
         diff = abs((angle - step_angle + 180) % 360 - 180)
         if diff < (UP_STEP_ANGLE_INC / 2) and abs(dist_radial - (UP_STEP_RADIAL - UP_STEP_DEPTH / 2)) < 0.5:
@@ -346,16 +364,11 @@ def handle_stair_collision():
                 on_ground = True
             return
 
-    # Verifica contato com piso inferior
+    # 3) Pisos fixos
     if abs(cam_y - (FLOOR_Y + 0.2)) < 0.1:
         on_ground = True
-    # Verifica contato com piso intermediário
     if abs(cam_y - (MID_FLOOR_Y + 0.2)) < 0.1:
         on_ground = True
-
-    # Verifica contato com piso superior
-   # if abs(cam_y - (TOP_FLOOR_Y + 0.2)) < 0.1:
-    #    on_ground = True
 
 
 # --------------------------------------
@@ -367,7 +380,7 @@ start_time = time.time()
 
 running = True
 while running:
-    dt = clock.tick(60) / 60.0  # em segundos
+    dt = clock.tick(60) / 60.0
     elapsed = time.time() - start_time
 
     for event in pygame.event.get():
@@ -408,9 +421,8 @@ while running:
     camera_vel_y -= GRAVITY * dt
     camera_pos[1] += camera_vel_y * dt
 
-    # ---------- COLISÕES COM ESCADAS E PISOS ----------
+    # ---------- COLISÕES COM RAMPA, ESCADA E PISOS ----------
     handle_stair_collision()
-    #handle_hatch_and_basement()
 
     # Piso inferior
     if camera_pos[1] < FLOOR_Y + 0.2:
@@ -442,32 +454,30 @@ while running:
     # 1) Parede interna da esfera
     draw_colored_inner_sphere(SPHERE_RADIUS)
 
-
     # 2) Piso inferior com alçapão
     draw_floor(FLOOR_Y, LIGHTER_BLUE, hole_radius=0.0)
 
     # 3) Piso intermediário com corte circular
     draw_floor(MID_FLOOR_Y, LIGHTER_BLUE, hole_radius=UPPER_HATCH_RADIUS)
 
-    # Desenha a claraboia aberta logo acima do teto
+    # 4) Claraboia
     draw_skylight(
-    y_level=TOP_PASSAGE_Y + 0.01,  # pouco acima do teto para evitar z-fighting
-    outer_radius=1.5,              # tamanho externo da claraboia
-    inner_radius=0.5,              # buraco da claraboia (vazio)
-    color=LIGHTER_BLUE             # cor da borda da claraboia
+        y_level=TOP_PASSAGE_Y + 0.01,
+        outer_radius=1.5,
+        inner_radius=0.5,
+        color=LIGHTER_BLUE
     )
 
-    # 5) Escada em espiral inferior
+    # 5) Rampa lateral (inferior→intermediário)
     if camera_pos[1] < MID_FLOOR_Y - 0.1:
-        draw_spiral_stairs_lower()
+        draw_ramp()
 
-    # 6) Escada em espiral superior
+    # 6) Escada superior (intermediário→teto)
     if MID_FLOOR_Y + 0.1 < camera_pos[1] < TOP_PASSAGE_Y - 0.1:
         draw_spiral_stairs_upper()
 
-    # Aqui entra a porta hobbit
-    draw_hobbit_door(radius=2.0, y_offset=MID_FLOOR_Y, angle_deg=270)
-
+    # 7) Porta Hobbit
+    draw_hobbit_door(radius=2.0, y_offset=MID_FLOOR_Y, angle_deg=0)
 
     pygame.display.flip()
 
