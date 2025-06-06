@@ -14,6 +14,10 @@ pygame.init()
 display = (1000, 700)
 pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
 
+BOTTOM_COLOR = (0.4, 0.0, 0.0)  # Vermelho escuro
+MIDDLE_COLOR = (0.0, 0.4, 0.0)  # Verde escuro
+TOP_COLOR    = (0.0, 0.0, 0.4)  # Azul escuro
+
 # Cores (normalizadas 0–1 para OpenGL)
 ROYAL_BLUE      = (65 / 255.0, 105 / 255.0, 225 / 255.0)
 LIGHTER_BLUE    = (100 / 255.0, 149 / 255.0, 237 / 255.0)
@@ -23,7 +27,7 @@ STEP_COLOR      = (0.55, 0.27, 0.07)
 LADDER_COLOR    = (0.4, 0.2, 0.1)
 
 # Parâmetros do quarto esférico
-SPHERE_RADIUS    = 5.0 # TIBET 
+SPHERE_RADIUS    = 5.0 # TIBET
 FLOOR_Y          = -3.0
 MID_FLOOR_Y      = FLOOR_Y + 4.2
 TOP_PASSAGE_Y    = SPHERE_RADIUS - 0.1
@@ -96,26 +100,43 @@ pygame.mouse.set_visible(False)
 # FUNÇÕES DE DESENHO
 # --------------------------------------
 
-def draw_plain_inner_sphere(radius, slices=64, stacks=64):
-    """Esfera interna colorida com wireframe."""
+def draw_colored_inner_sphere(radius):
+    """
+    Esfera interna com cores diferentes por andar.
+    """
+    slices = 64
+    stacks = 64
     quad = gluNewQuadric()
     glPushMatrix()
     glScalef(-1.0, 1.0, 1.0)
     glEnable(GL_POLYGON_OFFSET_FILL)
     glPolygonOffset(1.0, 1.0)
-    glColor3fv(ROYAL_BLUE)
-    gluSphere(quad, radius, slices, stacks)
+
+    for i in range(stacks):
+        lat0 = math.pi * (-0.5 + float(i) / stacks)
+        lat1 = math.pi * (-0.5 + float(i+1) / stacks)
+        y0 = radius * math.sin(lat0)
+        y1 = radius * math.sin(lat1)
+
+        # Determinar cor por faixa de altura
+        if y0 < FLOOR_Y:
+            glColor3fv(BOTTOM_COLOR)
+        elif y0 < MID_FLOOR_Y:
+            glColor3fv(MIDDLE_COLOR)
+        else:
+            glColor3fv(TOP_COLOR)
+
+        glBegin(GL_QUAD_STRIP)
+        for j in range(slices+1):
+            lng = 2 * math.pi * float(j) / slices
+            x = math.cos(lng)
+            z = math.sin(lng)
+            glVertex3f(radius * x * math.cos(lat0), y0, radius * z * math.cos(lat0))
+            glVertex3f(radius * x * math.cos(lat1), y1, radius * z * math.cos(lat1))
+        glEnd()
+
     glDisable(GL_POLYGON_OFFSET_FILL)
     glPopMatrix()
-
-    glPushMatrix()
-    glScalef(-1.0, 1.0, 1.0)
-    glColor3f(0.1, 0.1, 0.2)
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
-    gluSphere(quad, radius - 0.01, slices // 2, stacks // 2)
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
-    glPopMatrix()
-
     gluDeleteQuadric(quad)
 
 
@@ -289,7 +310,7 @@ def handle_stair_collision():
     if abs(cam_y - (MID_FLOOR_Y + 0.2)) < 0.1:
         on_ground = True
 
-    # Verifica contato com piso superior 
+    # Verifica contato com piso superior
    # if abs(cam_y - (TOP_FLOOR_Y + 0.2)) < 0.1:
     #    on_ground = True
 
@@ -377,7 +398,7 @@ while running:
     apply_camera()
 
     # 1) Parede interna da esfera
-    draw_plain_inner_sphere(SPHERE_RADIUS)
+    draw_colored_inner_sphere(SPHERE_RADIUS)
 
     # 2) Piso inferior com alçapão
     draw_floor(FLOOR_Y, LIGHTER_BLUE, hole_radius=0.0)
@@ -392,7 +413,7 @@ while running:
     # 6) Escada em espiral superior
     if MID_FLOOR_Y + 0.1 < camera_pos[1] < TOP_PASSAGE_Y - 0.1:
         draw_spiral_stairs_upper()
-    
+
 
     pygame.display.flip()
 
