@@ -262,6 +262,49 @@ def draw_spiral_stairs_upper():
         glEnd()
 
 
+def draw_hobbit_door(radius=HOBBIT_WINDOW_RADIUS, y_offset=0.0, angle_deg=0):
+    """
+    Desenha um círculo (porta estilo Hobbit) na parede da esfera.
+    - radius: raio do círculo.
+    - y_offset: altura da porta.
+    - angle_deg: ângulo na esfera onde será desenhada.
+    """
+    glPushMatrix()
+    theta = math.radians(angle_deg)
+    
+    # Posiciona na superfície da esfera
+    x = SPHERE_RADIUS * math.sin(theta)
+    z = SPHERE_RADIUS * math.cos(theta)
+    y = y_offset
+    
+    glTranslatef(x, y, z)
+    glRotatef(-angle_deg, 0, 1, 0)  # Gira o disco para "olhar para o centro"
+    glRotatef(90, 1, 0, 0)  # Põe o disco na vertical
+    glColor3fv(FRAME_GRAY)
+    
+    quad = gluNewQuadric()
+    gluDisk(quad, 0.0, radius, 64, 1)
+    gluDeleteQuadric(quad)
+    glPopMatrix()
+
+
+def draw_skylight(y_level, outer_radius, inner_radius, color):
+    """
+    Desenha uma claraboia circular aberta no teto da casa esférica.
+    y_level: altura vertical da claraboia (ex: perto do topo da esfera)
+    outer_radius: raio externo do anel
+    inner_radius: raio interno do anel (buraco da claraboia)
+    color: cor do anel
+    """
+    quad = gluNewQuadric()
+    glPushMatrix()
+    glTranslatef(0.0, y_level, 0.0)  # posiciona no teto
+    glRotatef(-90, 1, 0, 0)          # gira para ficar horizontal (XY plane)
+    glColor3fv(color)
+    gluDisk(quad, inner_radius, outer_radius, 64, 1)
+    glPopMatrix()
+    gluDeleteQuadric(quad)
+
 # --------------------------------------
 # CÂMERA (“FLY CAM”) E COLISÃO
 # --------------------------------------
@@ -313,7 +356,6 @@ def handle_stair_collision():
     # Verifica contato com piso superior
    # if abs(cam_y - (TOP_FLOOR_Y + 0.2)) < 0.1:
     #    on_ground = True
-
 
 
 # --------------------------------------
@@ -400,11 +442,20 @@ while running:
     # 1) Parede interna da esfera
     draw_colored_inner_sphere(SPHERE_RADIUS)
 
+
     # 2) Piso inferior com alçapão
     draw_floor(FLOOR_Y, LIGHTER_BLUE, hole_radius=0.0)
 
     # 3) Piso intermediário com corte circular
     draw_floor(MID_FLOOR_Y, LIGHTER_BLUE, hole_radius=UPPER_HATCH_RADIUS)
+
+    # Desenha a claraboia aberta logo acima do teto
+    draw_skylight(
+    y_level=TOP_PASSAGE_Y + 0.01,  # pouco acima do teto para evitar z-fighting
+    outer_radius=1.5,              # tamanho externo da claraboia
+    inner_radius=0.5,              # buraco da claraboia (vazio)
+    color=LIGHTER_BLUE             # cor da borda da claraboia
+    )
 
     # 5) Escada em espiral inferior
     if camera_pos[1] < MID_FLOOR_Y - 0.1:
@@ -413,6 +464,9 @@ while running:
     # 6) Escada em espiral superior
     if MID_FLOOR_Y + 0.1 < camera_pos[1] < TOP_PASSAGE_Y - 0.1:
         draw_spiral_stairs_upper()
+
+    # Aqui entra a porta hobbit
+    draw_hobbit_door(radius=2.0, y_offset=MID_FLOOR_Y, angle_deg=270)
 
 
     pygame.display.flip()
